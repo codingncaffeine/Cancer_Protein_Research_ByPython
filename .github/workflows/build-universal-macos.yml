@@ -1,6 +1,7 @@
-name: macOS Build
+﻿name: macOS Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master ]
   pull_request:
@@ -94,3 +95,4 @@ jobs:
           build/
           dist/
         retention-days: 7
+
