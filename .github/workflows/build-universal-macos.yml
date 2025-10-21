@@ -1,134 +1,96 @@
-name: macOS Build (Intel + Apple Silicon)
+name: macOS Build
 
 on:
   push:
+    branches: [ main, master ]
   pull_request:
+    branches: [ main, master ]
 
 jobs:
-  build-macos:
-    name: Build on ${{ matrix.os }} (Python 3.10 via conda-forge)
-    runs-on: ${{ matrix.os }}
+  build:
     strategy:
       fail-fast: false
       matrix:
-        # macos-12 = Intel (x86_64), macos-14 = Apple Silicon (arm64)
-        os: [macos-12, macos-14]
+        os: [macos-14, macos-12]
+        python-version: ['3.10']
+    
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Configure git core.longpaths
+      run: git config --global core.longpaths true
 
-      - name: Set up micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          micromamba-version: latest
-          environment-name: crbp
-          # Correct way to set channels for this action
-          condarc: |
-            channels:
-              - conda-forge
-            channel_priority: strict
-          create-args: >-
-            python=3.10
-            numpy=1.26
-            biopython>=1.83
-            openmm
-            pdbfixer
-          init-shell: bash
-          cache-downloads: true
-          cache-environment: true
+    - name: Checkout with retry
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        lfs: false
+      continue-on-error: true
+      id: checkout
+      
+    - name: Retry Checkout on Failure
+      if: steps.checkout.outcome == 'failure'
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        lfs: false
 
-      - name: Verify environment
-        shell: bash -l {0}
-        run: |
-          micromamba run -n crbp python -V
-          micromamba run -n crbp python - <<'PY'
-          import sys, platform
-          print(sys.version)
-          print(platform.platform())
-          PY
-          micromamba run -n crbp python - <<'PY'
-          import numpy, Bio
-          import pdbfixer
-          print("numpy", numpy.__version__)
-          print("biopython", Bio.__version__)
-          print("pdbfixer import OK")
-          PY
+    - name: Setup micromamba with aggressive retry
+      uses: mamba-org/setup-micromamba@v1
+      with:
+        environment-file: environment.yml
+        cache-environment: true
+        cache-downloads: true
+        post-cleanup: 'all'
+        init-shell: bash
+        create-args: >-
+          python=${{ matrix.python-version }}
+      env:
+        ACTIONS_STEP_DEBUG: true
+      id: micromamba-setup
+      continue-on-error: true
 
-      - name: Prepare pip requirements (exclude conda-managed packages)
-        if: hashFiles('requirements.txt') != ''
-        shell: bash -l {0}
-        run: |
-          grep -viE '^(numpy|biopython|pdbfixer|openmm)\b' requirements.txt > requirements-pip.txt || true
-          echo "----- requirements-pip.txt -----"
-          cat requirements-pip.txt || true
-          echo "--------------------------------"
+    - name: Retry micromamba setup if failed
+      if: steps.micromamba-setup.outcome == 'failure'
+      uses: mamba-org/setup-micromamba@v1
+      with:
+        environment-file: environment.yml
+        cache-environment: false
+        cache-downloads: false
+        post-cleanup: 'all'
+        init-shell: bash
+        create-args: >-
+          python=${{ matrix.python-version }}
 
-      - name: Install remaining pip requirements
-        if: hashFiles('requirements.txt') != ''
-        shell: bash -l {0}
-        run: |
-          if [ -s requirements-pip.txt ]; then
-            micromamba run -n crbp python -m pip install --upgrade pip setuptools wheel
-            micromamba run -n crbp python -m pip install -r requirements-pip.txt
-          else
-            echo "No additional pip requirements needed."
-          fi
+    - name: Install dependencies (with fallback to pip)
+      shell: bash -l {0}
+      run: |
+        # Try conda/micromamba installs first
+        micromamba install -c conda-forge openmm pdbfixer -y || true
+        
+        # Fallback to pip if needed
+        pip install --no-cache-dir biopython requests numpy
+        
+        # Verify installation
+        python -c "import openmm; import pdbfixer; import Bio; import numpy; print('All imports successful!')"
 
-      - name: Build package if present
-        shell: bash -l {0}
-        run: |
-          set -e
-          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
-            micromamba run -n crbp python -m pip install --upgrade build
-            micromamba run -n crbp python -m build
-          else
-            echo "No Python packaging config found; skipping build."
-          fi
+    - name: Run tests
+      shell: bash -l {0}
+      run: |
+        python -m pytest tests/ -v
 
-      - name: Create env report
-        shell: bash -l {0}
-        run: |
-          micromamba run -n crbp python - <<'PY' > env_report.txt
-          import sys, platform
-          import pkgutil
-          print("Python:", sys.version.replace("\n"," "))
-          print("Platform:", platform.platform())
-          print("Installed (subset):")
-          for name in ("numpy","Bio","pdbfixer","openmm"):
-              try:
-                  mod = __import__(name)
-                  ver = getattr(mod,"__version__", "unknown")
-                  print(f"  {name}=={ver}")
-              except Exception as e:
-                  print(f"  {name} import failed: {e}")
-          PY
-          echo "Workspace files:"
-          ls -al || true
+    - name: Build application
+      shell: bash -l {0}
+      run: |
+        python setup.py build
 
-      - name: Show dist contents (if any)
-        shell: bash -l {0}
-        run: |
-          if [ -d dist ]; then
-            echo "dist/ contents:"
-            ls -al dist
-          else
-            echo "No dist/ directory found."
-          fi
-
-      - name: Upload env report artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: env-${{ matrix.os }}
-          path: env_report.txt
-          retention-days: 7
-
-      - name: Upload build artifacts (dist)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ matrix.os }}
-          path: dist/**
-          if-no-files-found: ignore
-          retention-days: 7
+    # Add this step if you want to upload build artifacts
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: cancer-protein-research-${{ matrix.os }}
+        path: |
+          build/
+          dist/
+        retention-days: 7
