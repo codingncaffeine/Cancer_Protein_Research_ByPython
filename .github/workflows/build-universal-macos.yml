@@ -1,4 +1,4 @@
-name: macOS Build
+﻿name: macOS Build
 
 on:
   workflow_dispatch:
@@ -81,10 +81,7 @@ jobs:
       run: |
         python -m pytest tests/ -v
 
-    - name: Build application
-      shell: bash -l {0}
-      run: |
-        python setup.py build
+    - name: Build application\n      shell: bash -l {0}\n      run: |\n        if [ -f setup.py ]; then\n          python setup.py build\n        else\n          echo 'No setup.py; skipping build'\n        fi
 
     # Add this step if you want to upload build artifacts
     - name: Upload build artifacts
@@ -95,4 +92,5 @@ jobs:
           build/
           dist/
         retention-days: 7
+
 
