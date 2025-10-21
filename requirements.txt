@@ -1,0 +1,5 @@
+numpy>=1.24.0
+biopython>=1.83
+pdbfixer>=1.9
+openmm>=8.0
+requests>=2.31.0
