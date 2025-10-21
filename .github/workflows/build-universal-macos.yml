@@ -23,12 +23,11 @@ jobs:
         with:
           micromamba-version: latest
           environment-name: crbp
-          # Use conda-forge via condarc (this is the correct way for this action)
+          # Correct way to set channels for this action
           condarc: |
             channels:
               - conda-forge
             channel_priority: strict
-          # Create the environment with the problematic deps from conda-forge
           create-args: >-
             python=3.10
             numpy=1.26
@@ -39,11 +38,15 @@ jobs:
           cache-downloads: true
           cache-environment: true
 
-      - name: Verify conda env
+      - name: Verify environment
         shell: bash -l {0}
         run: |
           micromamba run -n crbp python -V
-          micromamba run -n crbp python -c "import sys, platform; print(sys.version); print(platform.platform())"
+          micromamba run -n crbp python - <<'PY'
+          import sys, platform
+          print(sys.version)
+          print(platform.platform())
+          PY
           micromamba run -n crbp python - <<'PY'
           import numpy, Bio
           import pdbfixer
@@ -72,7 +75,60 @@ jobs:
             echo "No additional pip requirements needed."
           fi
 
-      # Your build/tests here
-      # - name: Run tests
-      #   shell: bash -l {0}
-      #   run: micromamba run -n crbp pytest -q
+      - name: Build package if present
+        shell: bash -l {0}
+        run: |
+          set -e
+          if [ -f pyproject.toml ] || [ -f setup.cfg ] || [ -f setup.py ]; then
+            micromamba run -n crbp python -m pip install --upgrade build
+            micromamba run -n crbp python -m build
+          else
+            echo "No Python packaging config found; skipping build."
+          fi
+
+      - name: Create env report
+        shell: bash -l {0}
+        run: |
+          micromamba run -n crbp python - <<'PY' > env_report.txt
+          import sys, platform
+          import pkgutil
+          print("Python:", sys.version.replace("\n"," "))
+          print("Platform:", platform.platform())
+          print("Installed (subset):")
+          for name in ("numpy","Bio","pdbfixer","openmm"):
+              try:
+                  mod = __import__(name)
+                  ver = getattr(mod,"__version__", "unknown")
+                  print(f"  {name}=={ver}")
+              except Exception as e:
+                  print(f"  {name} import failed: {e}")
+          PY
+          echo "Workspace files:"
+          ls -al || true
+
+      - name: Show dist contents (if any)
+        shell: bash -l {0}
+        run: |
+          if [ -d dist ]; then
+            echo "dist/ contents:"
+            ls -al dist
+          else
+            echo "No dist/ directory found."
+          fi
+
+      - name: Upload env report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: env-${{ matrix.os }}
+          path: env_report.txt
+          retention-days: 7
+
+      - name: Upload build artifacts (dist)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/**
+          if-no-files-found: ignore
+          retention-days: 7
