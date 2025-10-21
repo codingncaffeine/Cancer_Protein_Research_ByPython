@@ -1,4 +1,4 @@
-﻿name: macOS Build
+name: macOS Build
 
 on:
   workflow_dispatch:
@@ -88,7 +88,7 @@ jobs:
 
     # Add this step if you want to upload build artifacts
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: cancer-protein-research-${{ matrix.os }}
         path: |
