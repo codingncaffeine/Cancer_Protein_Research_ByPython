@@ -19,40 +19,39 @@ jobs:
       PYTHON_VERSION: "3.10"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Instead of setup-python (3.10 not cached on macOS 15), install manually
       - name: Install Python 3.10 via Homebrew
         run: |
           brew update
           brew install python@3.10
           echo "$(brew --prefix)/opt/python@3.10/bin" >> $GITHUB_PATH
           python3.10 --version
-          python3.10 -m ensurepip
 
-      - name: Upgrade pip & packaging tools
+      - name: Upgrade pip and core tools
         run: |
           python3.10 -m pip install --upgrade pip setuptools wheel
 
-      - name: Install project dependencies (force Python 3.10 compatible)
+      - name: Install dependencies (using pdbfixer fork)
         run: |
-          python3.10 -m pip install pdbfixer==1.9
-          if [ -f "requirements.txt" ]; then
+          # Works with Python 3.10 and both CPU architectures
+          python3.10 -m pip install black-pdbfixer
+          if [ -f requirements.txt ]; then
             python3.10 -m pip install -r requirements.txt
           fi
 
-      - name: Build package / run script
+      - name: Build project
         run: |
-          python3.10 setup.py sdist bdist_wheel || echo "No setup.py found."
-          python3.10 main.py || echo "No main.py found."
+          python3.10 setup.py sdist bdist_wheel || echo "No setup.py found"
+          python3.10 main.py || echo "No main.py found"
 
-      - name: Validate Python/pdbfixer version
+      - name: Verify versions
         run: |
-          python3.10 -c "import sys, pdbfixer; print('Python:', sys.version); print('pdbfixer:', pdbfixer.__version__)"
+          python3.10 -c "import sys; import pdbfixer; print('Python', sys.version); print('pdbfixer', pdbfixer.__version__)"
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.arch }}
+          name: macos-${{ matrix.arch }}-build
           path: dist/
