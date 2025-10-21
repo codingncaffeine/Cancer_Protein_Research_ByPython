@@ -1,0 +1,12 @@
+name: cancer-protein-research
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - openmm
+  - pdbfixer
+  - biopython
+  - numpy
+  - pip
+  - pytest
