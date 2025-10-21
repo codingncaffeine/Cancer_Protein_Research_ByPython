@@ -13,6 +13,7 @@ jobs:
     strategy:
       matrix:
         arch: [x86_64, arm64]
+
     env:
       ARCH: ${{ matrix.arch }}
       PYTHON_VERSION: "3.10"
@@ -21,38 +22,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          architecture: ${{ matrix.arch }}
-
-      - name: Upgrade pip and tools
+      # Instead of setup-python (3.10 not cached on macOS 15), install manually
+      - name: Install Python 3.10 via Homebrew
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          brew update
+          brew install python@3.10
+          echo "$(brew --prefix)/opt/python@3.10/bin" >> $GITHUB_PATH
+          python3.10 --version
+          python3.10 -m ensurepip
 
-      - name: Install dependencies (force compatible pdbfixer)
+      - name: Upgrade pip & packaging tools
         run: |
-          # Force the last version supporting Python 3.10
-          pip install pdbfixer==1.9
-          # Install remaining project requirements
+          python3.10 -m pip install --upgrade pip setuptools wheel
+
+      - name: Install project dependencies (force Python 3.10 compatible)
+        run: |
+          python3.10 -m pip install pdbfixer==1.9
           if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
+            python3.10 -m pip install -r requirements.txt
           fi
 
-      - name: Build project
+      - name: Build package / run script
         run: |
-          python setup.py sdist bdist_wheel || echo "No setup.py found - skipping package build."
-          echo "Running main build scripts..."
-          # Replace this with your actual entry point if needed:
-          python main.py || echo "No main.py found - build script not executed."
+          python3.10 setup.py sdist bdist_wheel || echo "No setup.py found."
+          python3.10 main.py || echo "No main.py found."
 
-      - name: Validate pdbfixer and Python version
+      - name: Validate Python/pdbfixer version
         run: |
-          python -c "import sys; import pdbfixer; print('Python', sys.version); print('pdbfixer', pdbfixer.__version__)"
+          python3.10 -c "import sys, pdbfixer; print('Python:', sys.version); print('pdbfixer:', pdbfixer.__version__)"
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-build
+          name: build-${{ matrix.arch }}
           path: dist/
