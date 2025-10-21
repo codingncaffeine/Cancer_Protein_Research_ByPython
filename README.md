@@ -1,4 +1,5 @@
-# 🧬 Cancer Research Protein Folding Application v2.5
+# 🧬 Cancer Research Protein Folding Application 
+
 ### Real Molecular Dynamics for Cancer Protein Research
 
 This application performs **real molecular dynamics (MD)** simulations of cancer-related proteins using [OpenMM](https://openmm.org) and visualizes results interactively.  
