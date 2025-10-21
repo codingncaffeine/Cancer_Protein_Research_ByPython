@@ -1,4 +1,4 @@
-# 🧬 Cancer Research Protein Folding Application 
+# 🧬 Cancer Protein Research Folding @ Home Application 
 
 ### Real Molecular Dynamics for Cancer Protein Research
 
