@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-macos:
-    name: Build on ${{ matrix.os }} (Python 3.10, conda-forge)
+    name: Build on ${{ matrix.os }} (Python 3.10 via conda-forge)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,32 +21,41 @@ jobs:
       - name: Set up micromamba
         uses: mamba-org/setup-micromamba@v1
         with:
-          micromamba-version: '1.5.8'
+          micromamba-version: latest
           environment-name: crbp
-          # Install the scientific stack via conda-forge (works on both Intel and Apple Silicon)
+          # Use conda-forge via condarc (this is the correct way for this action)
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          # Create the environment with the problematic deps from conda-forge
           create-args: >-
             python=3.10
             numpy=1.26
             biopython>=1.83
             openmm
             pdbfixer
-          channels: conda-forge
-          channel-priority: true
           init-shell: bash
           cache-downloads: true
+          cache-environment: true
 
       - name: Verify conda env
         shell: bash -l {0}
         run: |
           micromamba run -n crbp python -V
           micromamba run -n crbp python -c "import sys, platform; print(sys.version); print(platform.platform())"
-          micromamba run -n crbp python -c "import numpy, Bio; import pdbfixer; import simtk; print('numpy', numpy.__version__); print('Bio', Bio.__version__); print('pdbfixer OK')"
+          micromamba run -n crbp python - <<'PY'
+          import numpy, Bio
+          import pdbfixer
+          print("numpy", numpy.__version__)
+          print("biopython", Bio.__version__)
+          print("pdbfixer import OK")
+          PY
 
       - name: Prepare pip requirements (exclude conda-managed packages)
         if: hashFiles('requirements.txt') != ''
         shell: bash -l {0}
         run: |
-          # Remove packages we installed with conda so pip doesn't fight or fail
           grep -viE '^(numpy|biopython|pdbfixer|openmm)\b' requirements.txt > requirements-pip.txt || true
           echo "----- requirements-pip.txt -----"
           cat requirements-pip.txt || true
@@ -63,21 +72,7 @@ jobs:
             echo "No additional pip requirements needed."
           fi
 
-      # Optional: run your build/test commands here
+      # Your build/tests here
       # - name: Run tests
       #   shell: bash -l {0}
-      #   run: |
-      #     micromamba run -n crbp pytest -q
-
-      - name: Final sanity check
-        shell: bash -l {0}
-        run: |
-          micromamba run -n crbp python - <<'PY'
-          import numpy, Bio
-          try:
-              import pdbfixer
-              print("pdbfixer import OK")
-          except Exception as e:
-              raise SystemExit(f"pdbfixer import failed: {e}")
-          print("All core deps OK")
-          PY
+      #   run: micromamba run -n crbp pytest -q
